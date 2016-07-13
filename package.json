@@ -1,0 +1,24 @@
+{
+  "name": "hubot-slack-ikku",
+  "version": "0.0.1",
+  "description": "add reaction to ikku",
+  "main": "index.coffee",
+  "author": "knjcode <knjcode@gmail.com>",
+  "license": "MIT",
+  "keywords": "hubot, hubot-scripts, ikku",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/knjcode/hubot-slack-ikku.git"
+  },
+  "bugs": {
+    "url": "https://github.com/knjcode/hubot-slack-ikku/issues"
+  },
+  "dependencies": {
+    "es6-promise": "^3.2.1",
+    "kuromojin": "^1.3.1",
+    "lodash.max": "^4.0.1",
+    "lodash.reduce": "^4.4.0",
+    "lodash.zipwith": "^4.0.0",
+    "unorm": "^1.4.1"
+  }
+}
