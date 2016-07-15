@@ -6,6 +6,7 @@
 #   HUBOT_SLACK_IKKU_JITARAZU_REACTION - set jitarazu emoji
 #   HUBOT_SLACK_IKKU_MAX_JIAMARI       - set max jiamari (default. 1)
 #   HUBOT_SLACK_IKKU_MAX_JITARAZU      - set max jitarazu (defualt. 0)
+#   HUBOT_SLACK_IKKU_MECAB_API_URL     - set mecab-api URL
 #   HUBOT_SLACK_IKKU_REACTION          - set reaction emoji (default. flower_playing_cards)
 #
 # Reference
@@ -23,6 +24,10 @@ unorm = require 'unorm'
 util = require 'util'
 zipWith = require 'lodash.zipwith'
 
+mecabUrl = process.env.HUBOT_SLACK_IKKU_MECAB_API_URL
+if !mecabUrl
+  console.error("ERROR: You should set HUBOT_SLACK_IKKU_MECAB_API_URL env variables.")
+
 reaction = process.env.HUBOT_SLACK_IKKU_REACTION ? 'flower_playing_cards'
 reaction_jiamari = process.env.HUBOT_SLACK_IKKU_JIAMARI_REACTION
 reaction_jitarazu = process.env.HUBOT_SLACK_IKKU_JITARAZU_REACTION
@@ -37,13 +42,26 @@ module.exports = (robot) ->
     reduce tmp, (sum, n) -> sum + n
 
 
+  mecabTokenize = (unorm_text, robot) -> new Promise (resolve) ->
+    data = JSON.stringify {
+        "sentence": unorm_text
+        "dictionary": 'mecab-ipadic-neologd'
+    }
+    robot.http(mecabUrl)
+      .header("Content-type", "application/json")
+      .post(data) (err, res, body) ->
+        resolve JSON.parse(body)
+
   robot.hear /.*?/i, (msg) ->
+    if !mecabUrl
+      robot.logger.error("You should set HUBOT_SLACK_IKKU_MECAB_API_URL env variables.")
+      return
     unorm_text = unorm.nfkc msg.message.text
 
     # detect ikku
-    tokenize(unorm_text)
+    mecabTokenize(unorm_text, robot)
     .then (result) ->
-      tokens = result
+      tokens = result.word_list
       targetRegions = [5, 7, 5]
       regions = [0]
 
