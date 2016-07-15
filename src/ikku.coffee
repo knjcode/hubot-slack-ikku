@@ -52,6 +52,16 @@ module.exports = (robot) ->
       .post(data) (err, res, body) ->
         resolve JSON.parse(body)
 
+  mecabTokenize = (unorm_text, robot) -> new Promise (resolve) ->
+    data = JSON.stringify {
+        "sentence": unorm_text
+        "dictionary": 'mecab-ipadic-neologd'
+    }
+    robot.http(mecabUrl)
+      .header("Content-type", "application/json")
+      .post(data) (err, res, body) ->
+        resolve JSON.parse(body)
+
   robot.hear /.*?/i, (msg) ->
     if !mecabUrl
       robot.logger.error("You should set HUBOT_SLACK_IKKU_MECAB_API_URL env variables.")
