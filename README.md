@@ -2,7 +2,7 @@
 
 ![hubot-slack-ikku](images/ikku.png)
 
-[slack-ikku](https://github.com/hakatashi/slack-ikku)のhubot-pluginです
+[slack-ikku](https://github.com/hakatashi/slack-ikku)を参考にしたhubot-pluginです
 
 hubotがjoinしているchannelから一句を見つけて自動でreactionをつけます
 
