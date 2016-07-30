@@ -36,14 +36,6 @@ module.exports = (robot) ->
     .map (x) -> max [x, 0]
     reduce tmp, (sum, n) -> sum + n
 
-  addReaction = (reaction, msg) -> new Promise (resolve) ->
-    channelId = robot.adapter.client.getChannelGroupOrDMByName(msg.envelope.room)?.id
-    robot.adapter.client._apiCall 'reactions.add',
-      name: reaction
-      channel: channelId
-      timestamp: msg.message.id
-    , (result) ->
-      resolve result
 
   robot.hear /.*?/i, (msg) ->
     unorm_text = unorm.nfkc msg.message.text
@@ -86,12 +78,16 @@ module.exports = (robot) ->
 
       return if jitarazu > max_jitarazu or jiamari > max_jiamari
 
-      addReaction(reaction, msg)
-      .then ->
+      robot.adapter.client.web.reactions.add reaction,
+        channel: msg.envelope.room
+        timestamp: msg.message.id
+      .then (res) ->
         robot.logger.info "Found ikku! #{msg.message.text}"
         robot.logger.debug "Add recation #{reaction} ts: #{msg.message.id}, channel: #{msg.envelope.room}, text: #{msg.message.text}"
         addReaction(reaction_jiamari, msg) if jiamari > 0 and reaction_jiamari
         addReaction(reaction_jitarazu, msg) if jitarazu > 0 and reaction_jitarazu
+      .catch (error) ->
+        robot.logger.error error
 
     .catch (error) ->
       robot.logger.error error
