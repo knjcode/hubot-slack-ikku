@@ -70,25 +70,25 @@ module.exports = (robot) ->
     reduce tmp, (sum, n) -> sum + n
 
 
-  postRanking = (robot, channel_name, unformated_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
-    robot.adapter.client._apiCall 'chat.postMessage',
-      channel: channel_name
+  postRanking = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
+    robot.adapter.client.web.chat.postMessage channel_name, unformatted_text,
       username: user_name
-      text: unformated_text
       link_names: link_names
       icon_url: icon_url
-    , (result) ->
-      resolve result
+    , (err, res) ->
+      if err
+        robot.logger.error err
+      resolve res
 
   copyMessage = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
-    robot.adapter.client._apiCall 'chat.postMessage',
-      channel: channel_name
-      text: unformatted_text
+    robot.adapter.client.web.chat.postMessage channel_name, unformatted_text,
       username: user_name
       link_names: link_names
       icon_url: icon_url
-    , (result) ->
-      resolve result
+    , (err, res) ->
+      if err
+        robot.logger.error err
+      resolve res
 
   sumUpIkkuPerUser = (user_name) ->
     if !data
@@ -219,22 +219,24 @@ module.exports = (robot) ->
         robot.logger.error error
 
       # copyMessage
-      unformatted_text = "#{msg.message.text} (##{msg.envelope.room})"
+      channel_name = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.envelope.room).name
+      unformatted_text = "#{msg.message.text} (##{channel_name})"
       user_name = msg.message.user.name
-      userId = msg.message.user.id
-      reloadUserImages(robot, userId)
-      icon_url = robot.brain.data.userImages[userId]
+      icon_url = robot.adapter.client.rtm.dataStore.users[msg.message.user.id].profile.image_48
+      if icon_url is '' # set default userImage
+        icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
+
       link_names = process.env.SLACK_LINK_NAMES ? 0
       ikku_channel = process.env.HUBOT_SLACK_IKKU_CHANNEL ? "ikku"
 
       sumUpIkkuPerUser(user_name)
 
       # ignore messages to ikku channel
-      if msg.envelope.room is ikku_channel
-        return
+      return if channel_name is ikku_channel
+
       # ignore private channels
-      if msg.envelope.message.rawMessage.channel[0] is 'G'
-        return
+      return if msg.envelope.room[0] is 'G'
+
       if icon_url is ''
         icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
       copyMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
@@ -243,20 +245,3 @@ module.exports = (robot) ->
 
     .catch (error) ->
       robot.logger.error error
-
-  reloadUserImages = (robot, userId, justOne) ->
-    robot.brain.data.userImages = {} if !robot.brain.data.userImages
-    robot.brain.data.userImages[userId] = '' if !robot.brain.data.userImages[userId]?
-    unless justOne
-      return if robot.brain.data.userImages[userId] isnt ''
-    username = robot.adapter.client.getUserByID(userId).name
-    robot.adapter.client._apiCall 'users.list', {}, (res) ->
-      for i in [0...res.members.length]
-        targetId = res.members[i].id
-        targetImage = res.members[i].profile.image_48
-        if justOne
-          if targetId is userId
-            robot.logger.info "Reload #{username} image. targetId: #{targetId} targetImage: #{targetImage}"
-            robot.brain.data.userImages[userId] = targetImage
-        else
-          robot.brain.data.userImages[targetId] = targetImage
