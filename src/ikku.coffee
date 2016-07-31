@@ -70,17 +70,7 @@ module.exports = (robot) ->
     reduce tmp, (sum, n) -> sum + n
 
 
-  postRanking = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
-    robot.adapter.client.web.chat.postMessage channel_name, unformatted_text,
-      username: user_name
-      link_names: link_names
-      icon_url: icon_url
-    , (err, res) ->
-      if err
-        robot.logger.error err
-      resolve res
-
-  copyMessage = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
+  postMessage = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
     robot.adapter.client.web.chat.postMessage channel_name, unformatted_text,
       username: user_name
       link_names: link_names
@@ -131,7 +121,7 @@ module.exports = (robot) ->
       ranking_channel = process.env.HUBOT_SLACK_IKKU_RANKING_CHANNEL ? "ikku"
       ranking_text = score()
       if ranking_text.length > 0
-        postRanking(robot, ranking_channel, ranking_text, hubot_name, link_names, icon_url)
+        postMessage(robot, ranking_channel, ranking_text, hubot_name, link_names, icon_url)
         .then (result) ->
           robot.logger.info "post ranking: #{JSON.stringify result}"
           # update latestData
@@ -148,7 +138,7 @@ module.exports = (robot) ->
       report[report.length] = new cronJob ranking_cronjob, () ->
         display_ranking()
       , null, true, timezone
-      robot.logger.info("Set ranking cronjob at " + ranking_cronjob)
+      robot.logger.info("hubot-slack-ikku: set ranking cronjob at " + ranking_cronjob)
 
   mecabTokenize = (unorm_text, robot) -> new Promise (resolve) ->
     json = JSON.stringify {
@@ -239,7 +229,7 @@ module.exports = (robot) ->
 
       if icon_url is ''
         icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
-      copyMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
+      postMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
       .then ->
         robot.logger.debug "Copy Ikku ts: #{msg.message.id}, channel: #{msg.envelope.room}, text: #{msg.message.text}"
 
