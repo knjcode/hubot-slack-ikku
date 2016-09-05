@@ -231,8 +231,6 @@ module.exports = (robot) ->
       link_names = process.env.SLACK_LINK_NAMES ? 0
       ikku_channel = process.env.HUBOT_SLACK_IKKU_CHANNEL ? "ikku"
 
-      sumUpIkkuPerUser(user_name)
-
       # ignore messages to ikku channel
       if msg.envelope.room is ikku_channel
         return
@@ -244,6 +242,8 @@ module.exports = (robot) ->
       copyMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
       .then ->
         robot.logger.debug "Copy Ikku ts: #{msg.message.id}, channel: #{msg.envelope.room}, text: #{msg.message.text}"
+        sumUpIkkuPerUser(user_name)
+
 
     .catch (error) ->
       robot.logger.error error
