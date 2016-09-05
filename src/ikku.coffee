@@ -219,8 +219,6 @@ module.exports = (robot) ->
       link_names = process.env.SLACK_LINK_NAMES ? 0
       ikku_channel = process.env.HUBOT_SLACK_IKKU_CHANNEL ? "ikku"
 
-      sumUpIkkuPerUser(user_name)
-
       # ignore messages to ikku channel
       return if channel_name is ikku_channel
 
@@ -231,6 +229,7 @@ module.exports = (robot) ->
         icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
       postMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
       .then ->
+        sumUpIkkuPerUser(user_name)
         robot.logger.debug "Copy Ikku ts: #{msg.message.id}, channel: #{msg.envelope.room}, text: #{msg.message.text}"
 
     .catch (error) ->
