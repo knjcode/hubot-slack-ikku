@@ -150,11 +150,11 @@ module.exports = (robot) ->
       .post(json) (err, res, body) ->
         resolve JSON.parse(body)
 
-  robot.hear /.*?/i, (msg) ->
+  isIkku = (message) ->
     if !mecabUrl
       robot.logger.error("You should set HUBOT_SLACK_IKKU_MECAB_API_URL env variables.")
-      return
-    unorm_text = unorm.nfkc msg.message.text
+      return false
+    unorm_text = unorm.nfkc message
 
     # detect ikku
     mecabTokenize(unorm_text, robot)
@@ -173,7 +173,7 @@ module.exports = (robot) ->
             `continue outer`
 
         pronunciation = token.pronunciation or token.surface_form
-        return unless pronunciation.match /^[ぁ-ゔァ-ヺー…]+$/
+        return false unless pronunciation.match /^[ぁ-ゔァ-ヺー…]+$/
 
         regionLength = pronunciation.replace(/[ぁぃぅぇぉゃゅょァィゥェォャュョ…]/g, '').length
 
@@ -187,13 +187,18 @@ module.exports = (robot) ->
       if regions[regions.length - 1] is 0
         regions.pop
 
-      return if regions.length isnt targetRegions.length
+      return false if regions.length isnt targetRegions.length
 
       jiamari = checkArrayDifference regions, targetRegions
       jitarazu = checkArrayDifference targetRegions, regions
 
-      return if jitarazu > max_jitarazu or jiamari > max_jiamari
+      return false if jitarazu > max_jitarazu or jiamari > max_jiamari
 
+      return true
+
+
+  robot.hear /.*?/i, (msg) ->
+    if isIkku(msg.message.text)
       # find ikku
 
       # addReaction
