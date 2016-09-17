@@ -21,6 +21,7 @@
     "lodash.max": "^4.0.1",
     "lodash.reduce": "^4.4.0",
     "lodash.zipwith": "^4.0.0",
+    "redis": "^2.6.2",
     "unorm": "^1.4.1"
   }
 }
