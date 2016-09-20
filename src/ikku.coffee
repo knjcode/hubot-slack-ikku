@@ -54,7 +54,7 @@ tsRedisClient = if info.auth then tsRedis.createClient(info.port, info.hostname,
 
 module.exports = (robot) ->
 
-  prefix = robot.adapter.client.rtm.activeTeamId
+  prefix = robot.adapter.client.rtm.activeTeamId + ':ikku'
   if info.auth
     tsRedisClient.auth info.auth.split(':')[1], (err) ->
       if err
