@@ -332,7 +332,6 @@ module.exports = (robot) ->
 
     # change messages
     if msg.type is 'message' and msg.subtype is 'message_changed'
-      return if msg.channel is targetChannelId # return if ikku_channel messages changed
       return if msg.message.text is msg.previous_message.text # return if text not changed
       message_channel = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.channel).name
 
@@ -357,18 +356,75 @@ module.exports = (robot) ->
                   robot.logger.error err
                 else
                   robot.logger.debug "delete ikku #{JSON.stringify res}"
+                  tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
+                    if err
+                      robot.logger.error err
+                    else
+                      robot.logger.debug "delete redis hash #{reply}"
+
               # remove reactions from original message
               removeReaction(reaction, msg.channel, msg.previous_message.ts)
               removeReaction(reaction_jiamari, msg.channel, msg.previous_message.ts)
               removeReaction(reaction_jitarazu, msg.channel, msg.previous_message.ts)
+        else
+          # ikku
+          jiamari = result[0]
+          jitarazu = result[1]
+
+          addReaction(reaction, msg.channel, msg.previous_message.ts)
+          .then (res) ->
+            robot.logger.info "Found ikku! #{msg.message.text}"
+            robot.logger.debug "Add recation #{reaction} ts: #{msg.previous_message.ts}, channel: #{message_channel}, text: #{message}"
+            addReaction(reaction_jiamari, msg.channel, msg.previous_message.ts) if jiamari > 0 and reaction_jiamari
+            addReaction(reaction_jitarazu, msg.channel, msg.previous_message.ts) if jitarazu > 0 and reaction_jitarazu
+
+          # copyMessage
+          unformatted_text = "#{message} (##{message_channel})"
+          user_name = robot.adapter.client.rtm.dataStore.users[msg.message.user].profile.name
+
+          icon_url = robot.adapter.client.rtm.dataStore.users[msg.message.user].profile.image_48
+          if icon_url is '' # set default userImage
+            icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
+
+          link_names = process.env.SLACK_LINK_NAMES ? 0
+
+          # ignore messages to ikku channel
+          return if message_channel is ikku_channel
+
+          # ignore private channels
+          return if msg.channel[0] is 'G'
+
+          if icon_url is ''
+            icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
+          postMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
+          .then (res) ->
+            # save relation of original message ts and copied messages ts
+            tsRedisClient.hsetnx "#{prefix}:#{msg.channel}", msg.previous_message.ts, res.ts, (err, reply) ->
+              if err
+                robot.logger.error err
+              else
+                robot.logger.debug "Copy Ikku ts: #{msg.previous_message.ts}, channel: #{message_channel}, text: #{message}"
+            # sum up ikku per user
+            # sumUpIkkuPerUser(user_name)
+          .catch (err) ->
+            robot.logger.error err
+
 
     # delete messages
     if msg.type is 'message' and msg.subtype is 'message_deleted'
       return if msg.channel is targetChannelId # return if ikku_channel messages deleted
       tsRedisClient.hget "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
-        # delete copied ikku
-        robot.adapter.client.web.chat.delete reply, targetChannelId, (err, res) ->
-          if err
-            robot.logger.error err
-          else
-            robot.logger.debug "delete timeline message #{JSON.stringify res}"
+        if err
+          robot.logger.error err
+        else
+          # delete copied ikku
+          robot.adapter.client.web.chat.delete reply, targetChannelId, (err, res) ->
+            if err
+              robot.logger.error err
+            else
+              robot.logger.debug "delete ikku #{JSON.stringify res}"
+              tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
+                if err
+                  robot.logger.error err
+                else
+                  robot.logger.debug "delete redis hash #{reply}"
