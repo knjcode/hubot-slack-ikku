@@ -209,6 +209,34 @@ module.exports = (robot) ->
 
     return [jiamari, jitarazu]
 
+  reactionAndCopyIkku = (channelId, messageTs, message, channelName, userName, userId, jiamari, jitarazu) ->
+    robot.logger.info "Found ikku! #{message}"
+
+    # add reactions
+    addReaction(reaction, channelId, messageTs)
+    .then (res) ->
+      robot.logger.debug "Add recation #{reaction} ts: #{messageTs}, channel: #{channelId}, text: #{message}"
+      addReaction(reaction_jiamari, channelId, messageTs) if jiamari > 0 and reaction_jiamari
+      addReaction(reaction_jitarazu, channelId, messageTs) if jitarazu > 0 and reaction_jitarazu
+
+    # copy ikku into ikku channel
+    unformatted_text = "#{message} (##{channelName})"
+    icon_url = robot.adapter.client.rtm.dataStore.users[userId].profile.image_48
+    if icon_url is '' # set default userImage
+      icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
+
+    return if channelName is ikku_channel # ignore messages to ikku channel
+    return if channelId[0] is 'G' # ignore private channels
+
+    link_names = process.env.SLACK_LINK_NAMES ? 0
+    postMessage(robot, ikku_channel, unformatted_text, userName, link_names, icon_url)
+    .then (res) ->
+      # save relation of original message ts and copied messages ts
+      tsRedisClient.hsetnx "#{prefix}:#{channelId}", messageTs, res.ts
+      # sum up ikku per user
+      sumUpIkkuPerUser(userName)
+      robot.logger.debug "Copy Ikku ts: #{messageTs}, channel: #{channelId}, text: #{message}"
+
   addReaction = (reaction, channelId, timestamp) -> new Promise (resolve) ->
     robot.adapter.client.web.reactions.add reaction,
       channel: channelId
@@ -285,38 +313,14 @@ module.exports = (robot) ->
       jiamari = result[0]
       jitarazu = result[1]
 
-      addReaction(reaction, msg.envelope.room, msg.message.id)
-      .then (res) ->
-        robot.logger.info "Found ikku! #{msg.message.text}"
-        robot.logger.debug "Add recation #{reaction} ts: #{msg.message.id}, channel: #{msg.envelope.room}, text: #{msg.message.text}"
-        addReaction(reaction_jiamari, msg.envelope.room, msg.message.id) if jiamari > 0 and reaction_jiamari
-        addReaction(reaction_jitarazu, msg.envelope.room, msg.message.id) if jitarazu > 0 and reaction_jitarazu
+      channelId = msg.envelope.room
+      messageTs = msg.message.id
+      message = msg.message.text
+      channelName = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.envelope.room).name
+      userName = msg.message.user.name
+      userId = msg.message.user.id
 
-      # copyMessage
-      channel_name = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.envelope.room).name
-      unformatted_text = "#{msg.message.text} (##{channel_name})"
-      user_name = msg.message.user.name
-      icon_url = robot.adapter.client.rtm.dataStore.users[msg.message.user.id].profile.image_48
-      if icon_url is '' # set default userImage
-        icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
-
-      link_names = process.env.SLACK_LINK_NAMES ? 0
-
-      # ignore messages to ikku channel
-      return if channel_name is ikku_channel
-
-      # ignore private channels
-      return if msg.envelope.room[0] is 'G'
-
-      if icon_url is ''
-        icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
-      postMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
-      .then (res) ->
-        # save relation of original message ts and copied messages ts
-        tsRedisClient.hsetnx "#{prefix}:#{msg.envelope.room}", msg.message.id, res.ts
-        # sum up ikku per user
-        sumUpIkkuPerUser(user_name)
-        robot.logger.debug "Copy Ikku ts: #{msg.message.id}, channel: #{msg.envelope.room}, text: #{msg.message.text}"
+      reactionAndCopyIkku(channelId, messageTs, message, channelName, userName, userId, jiamari, jitarazu)
 
     .catch (error) ->
       robot.logger.error error
@@ -371,44 +375,14 @@ module.exports = (robot) ->
           jiamari = result[0]
           jitarazu = result[1]
 
-          addReaction(reaction, msg.channel, msg.previous_message.ts)
-          .then (res) ->
-            robot.logger.info "Found ikku! #{msg.message.text}"
-            robot.logger.debug "Add recation #{reaction} ts: #{msg.previous_message.ts}, channel: #{message_channel}, text: #{message}"
-            addReaction(reaction_jiamari, msg.channel, msg.previous_message.ts) if jiamari > 0 and reaction_jiamari
-            addReaction(reaction_jitarazu, msg.channel, msg.previous_message.ts) if jitarazu > 0 and reaction_jitarazu
+          channelId = msg.channel
+          messageTs = msg.previous_message.ts
+          message = message
+          channelName = message_channel
+          userName = robot.adapter.client.rtm.dataStore.users[msg.message.user].name
+          userId = msg.message.user
 
-          # copyMessage
-          unformatted_text = "#{message} (##{message_channel})"
-          user_name = robot.adapter.client.rtm.dataStore.users[msg.message.user].profile.name
-
-          icon_url = robot.adapter.client.rtm.dataStore.users[msg.message.user].profile.image_48
-          if icon_url is '' # set default userImage
-            icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
-
-          link_names = process.env.SLACK_LINK_NAMES ? 0
-
-          # ignore messages to ikku channel
-          return if message_channel is ikku_channel
-
-          # ignore private channels
-          return if msg.channel[0] is 'G'
-
-          if icon_url is ''
-            icon_url = 'https://i0.wp.com/slack-assets2.s3-us-west-2.amazonaws.com/8390/img/avatars/ava_0002-48.png'
-          postMessage(robot, ikku_channel, unformatted_text, user_name, link_names, icon_url)
-          .then (res) ->
-            # save relation of original message ts and copied messages ts
-            tsRedisClient.hsetnx "#{prefix}:#{msg.channel}", msg.previous_message.ts, res.ts, (err, reply) ->
-              if err
-                robot.logger.error err
-              else
-                robot.logger.debug "Copy Ikku ts: #{msg.previous_message.ts}, channel: #{message_channel}, text: #{message}"
-            # sum up ikku per user
-            # sumUpIkkuPerUser(user_name)
-          .catch (err) ->
-            robot.logger.error err
-
+          reactionAndCopyIkku(channelId, messageTs, message, channelName, userName, userId, jiamari, jitarazu)
 
     # delete messages
     if msg.type is 'message' and msg.subtype is 'message_deleted'
