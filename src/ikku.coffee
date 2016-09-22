@@ -8,6 +8,7 @@
 #   HUBOT_SLACK_IKKU_RANKING_CHANNEL   - ranking channel name (default. ikku)
 #   HUBOT_SLACK_IKKU_RANKING_CRONJOB   - ranking cron (default. "0 0 10 * * *")
 #   HUBOT_SLACK_IKKU_RANKING_ENABLED   - set 1 to display ranking
+#   HUBOT_SLACK_IKKU_RANKING_TOP_N     - set number of members displayed in ranking (default. 5)
 #   HUBOT_SLACK_IKKU_MAX_JIAMARI       - set max jiamari (default. 1)
 #   HUBOT_SLACK_IKKU_MAX_JITARAZU      - set max jitarazu (defualt. 0)
 #   HUBOT_SLACK_IKKU_MECAB_API_URL     - set mecab-api URL
@@ -48,11 +49,16 @@ max_jiamari = process.env.HUBOT_SLACK_IKKU_MAX_JIAMARI ? 1
 max_jitarazu = process.env.HUBOT_SLACK_IKKU_MAX_JITARAZU ? 0
 ikku_channel = process.env.HUBOT_SLACK_IKKU_CHANNEL ? "ikku"
 tsRedisUrl = process.env.HUBOT_SLACK_IKKU_MSG_REDIS ? 'redis://localhost:6379'
+ranking_channel = process.env.HUBOT_SLACK_IKKU_RANKING_CHANNEL ? "ikku"
+ranking_enabled = process.env.HUBOT_SLACK_IKKU_RANKING_ENABLED
+top_n = process.env.HUBOT_SLACK_IKKU_RANKING_TOP_N ? 5
 
 info = url.parse tsRedisUrl, true
 tsRedisClient = if info.auth then tsRedis.createClient(info.port, info.hostname, {no_ready_check: true}) else tsRedis.createClient(info.port, info.hostname)
 
 module.exports = (robot) ->
+  report = []
+  targetChannelId = robot.adapter.client.rtm.dataStore.getChannelOrGroupByName(ikku_channel)?.id
 
   prefix = robot.adapter.client.rtm.activeTeamId + ':ikku'
   if info.auth
@@ -68,22 +74,6 @@ module.exports = (robot) ->
   tsRedisClient.on 'connect', ->
     robot.logger.debug "hubot-slack-ikku:  Successfully connected to MessageRedis"
 
-  data = {}
-  latestData = {}
-  report = []
-  loaded = false
-
-  robot.brain.on "loaded", ->
-    # "loaded" event is called every time robot.brain changed
-    # data loading is needed only once after a reboot
-    if !loaded
-      try
-        data = JSON.parse robot.brain.data.ikkuSumup
-        latestData = JSON.parse robot.brain.data.ikkuSumupLatest
-      catch error
-        robot.logger.info("JSON parse error (reason: #{error})")
-      enableReport()
-    loaded = true
 
   checkArrayDifference = (a, b) ->
     tmp = zipWith a, b, (x, y) ->
@@ -92,66 +82,7 @@ module.exports = (robot) ->
     reduce tmp, (sum, n) -> sum + n
 
 
-  postMessage = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
-    robot.adapter.client.web.chat.postMessage channel_name, unformatted_text,
-      username: user_name
-      link_names: link_names
-      icon_url: icon_url
-    , (err, res) ->
-      if err
-        robot.logger.error err
-      resolve res
-
-  sumUpIkkuPerUser = (user_name) ->
-    if !data
-      data = {}
-    if !data[user_name]
-      data[user_name] = 0
-    data[user_name]++
-    # wait robot.brain.set until loaded avoid destruction of data
-    if loaded
-      robot.brain.data.ikkuSumup = JSON.stringify data
-
-  score = ->
-    # culculate diff between data and latestData
-    diff = {}
-    for key, value of data
-      if !latestData[key]
-        latestData[key] = 0
-      if (value - latestData[key]) > 0
-        diff[key] = value - latestData[key]
-    # sort diff by value
-    z = []
-    for key,value of diff
-      z.push([key,value])
-    z.sort( (a,b) -> b[1] - a[1] )
-    # display ranking
-    if z.length > 0
-      msgs = [ "ここ一日の詠み人" ]
-      top5 = z[0..4]
-      for ikkuPerUser in top5
-        msgs.push(ikkuPerUser[0]+" ("+ikkuPerUser[1]+"句)")
-      return msgs.join("\n")
-    return ""
-
-  display_ranking = ->
-    ranking_enabled = process.env.HUBOT_SLACK_IKKU_RANKING_ENABLED
-    if ranking_enabled
-      hubot_name = robot.adapter.self.name
-      icon_url = robot.brain.data.userImages[robot.adapter.self.id]
-      link_names = process.env.SLACK_LINK_NAMES ? 0
-      ranking_channel = process.env.HUBOT_SLACK_IKKU_RANKING_CHANNEL ? "ikku"
-      ranking_text = score()
-      if ranking_text.length > 0
-        postMessage(robot, ranking_channel, ranking_text, hubot_name, link_names, icon_url)
-        .then (result) ->
-          robot.logger.info "post ranking: #{JSON.stringify result}"
-          # update latestData
-          latestData = cloneDeep data
-          robot.brain.data.ikkuSumupLatest = JSON.stringify latestData
-
   enableReport = ->
-    ranking_enabled = process.env.HUBOT_SLACK_IKKU_RANKING_ENABLED
     if ranking_enabled
       for job in report
         job.stop()
@@ -161,6 +92,44 @@ module.exports = (robot) ->
         display_ranking()
       , null, true, timezone
       robot.logger.info("hubot-slack-ikku: set ranking cronjob at " + ranking_cronjob)
+  enableReport()
+
+  score = -> new Promise (resolve) ->
+    ranking = []
+    tsRedisClient.zrevrange "#{prefix}:ranking", 0, top_n - 1, 'WITHSCORES', (err, reply) ->
+      robot.logger.error "Failed to get ranking from MessageRedis" if err
+      while reply.length isnt 0
+        userId = reply.shift()
+        ikkuCount = reply.shift()
+        if ikkuCount > 0
+          userName = robot.adapter.client.rtm.dataStore.users[userId].name
+          ranking.push([userName, ikkuCount])
+      # display ranking
+      if ranking.length > 0
+        msgs = [ "ここ一日の詠み人" ]
+        for ikkuPerUser in ranking
+          msgs.push(ikkuPerUser[0]+" ("+ikkuPerUser[1]+"句)")
+        resolve msgs.join("\n")
+      resolve ""
+
+  display_ranking = ->
+    if ranking_enabled
+      score()
+      .then (ranking_text) ->
+        if ranking_text.length > 0
+          icon_url = robot.adapter.client.rtm.dataStore.users[robot.adapter.self.id].profile.image_48
+          postMessage(robot, ranking_channel, ranking_text, robot.name, icon_url)
+          .then (res) ->
+            robot.logger.info "post ranking: #{JSON.stringify res}"
+            tsRedisClient.del "#{prefix}:ranking"
+        else
+          robot.logger.info "no ranking data"
+
+  incrementIkkuPerUser = (userId) ->
+    tsRedisClient.zincrby "#{prefix}:ranking", 1, "#{userId}"
+
+  decrementIkkuPerUser = (userId) ->
+    tsRedisClient.zincrby "#{prefix}:ranking", -1, "#{userId}"
 
   mecabTokenize = (unorm_text, robot) -> new Promise (resolve) ->
     json = JSON.stringify {
@@ -170,6 +139,7 @@ module.exports = (robot) ->
     robot.http(mecabUrl)
       .header("Content-type", "application/json")
       .post(json) (err, res, body) ->
+        robot.logger.err err if err
         resolve JSON.parse(body)
 
   detectIkku = (tokens) ->
@@ -209,6 +179,27 @@ module.exports = (robot) ->
 
     return [jiamari, jitarazu]
 
+  postMessage = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
+    robot.adapter.client.web.chat.postMessage channel_name, unformatted_text,
+      username: user_name
+      link_names: link_names
+      icon_url: icon_url
+    , (err, res) ->
+      robot.logger.error err if err
+      resolve res
+
+  addReaction = (reaction, channelId, timestamp) -> new Promise (resolve) ->
+    robot.adapter.client.web.reactions.add reaction,
+      channel: channelId
+      timestamp: timestamp
+    , (res) -> resolve res
+
+  removeReaction = (reaction, channelId, timestamp) -> new Promise (resolve) ->
+    robot.adapter.client.web.reactions.remove reaction,
+      channel: channelId
+      timestamp: timestamp
+    , (res) -> resolve res
+
   reactionAndCopyIkku = (channelId, messageTs, message, channelName, userName, userId, jiamari, jitarazu) ->
     robot.logger.info "Found ikku! #{message}"
 
@@ -216,8 +207,8 @@ module.exports = (robot) ->
     addReaction(reaction, channelId, messageTs)
     .then (res) ->
       robot.logger.debug "Add recation #{reaction} ts: #{messageTs}, channel: #{channelId}, text: #{message}"
-      addReaction(reaction_jiamari, channelId, messageTs) if jiamari > 0 and reaction_jiamari
-      addReaction(reaction_jitarazu, channelId, messageTs) if jitarazu > 0 and reaction_jitarazu
+    addReaction(reaction_jiamari, channelId, messageTs) if jiamari > 0 and reaction_jiamari
+    addReaction(reaction_jitarazu, channelId, messageTs) if jitarazu > 0 and reaction_jitarazu
 
     # copy ikku into ikku channel
     unformatted_text = "#{message} (##{channelName})"
@@ -234,20 +225,8 @@ module.exports = (robot) ->
       # save relation of original message ts and copied messages ts
       tsRedisClient.hsetnx "#{prefix}:#{channelId}", messageTs, res.ts
       # sum up ikku per user
-      sumUpIkkuPerUser(userName)
+      incrementIkkuPerUser(userId)
       robot.logger.debug "Copy Ikku ts: #{messageTs}, channel: #{channelId}, text: #{message}"
-
-  addReaction = (reaction, channelId, timestamp) -> new Promise (resolve) ->
-    robot.adapter.client.web.reactions.add reaction,
-      channel: channelId
-      timestamp: timestamp
-    , (res) -> resolve res
-
-  removeReaction = (reaction, channelId, timestamp) -> new Promise (resolve) ->
-    robot.adapter.client.web.reactions.remove reaction,
-      channel: channelId
-      timestamp: timestamp
-    , (res) -> resolve res
 
   removeFormatting = (text, mode) ->
     # https://api.slack.com/docs/message-formatting
@@ -310,23 +289,17 @@ module.exports = (robot) ->
       result = detectIkku(tokens)
       return unless result
       # find ikku
-      jiamari = result[0]
-      jitarazu = result[1]
-
       channelId = msg.envelope.room
       messageTs = msg.message.id
       message = msg.message.text
       channelName = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.envelope.room).name
       userName = msg.message.user.name
       userId = msg.message.user.id
-
+      jiamari = result[0]
+      jitarazu = result[1]
       reactionAndCopyIkku(channelId, messageTs, message, channelName, userName, userId, jiamari, jitarazu)
 
-    .catch (error) ->
-      robot.logger.error error
-
   # change and delete ikku_channel messages and remove reactions if original message becomes not ikku
-  targetChannelId = robot.adapter.client.rtm.dataStore.getChannelOrGroupByName(ikku_channel)?.id
   robot.adapter.client.rtm.on 'raw_message', (msg) ->
     msg = JSON.parse(msg)
 
@@ -335,8 +308,6 @@ module.exports = (robot) ->
     # change messages
     if msg.type is 'message' and msg.subtype is 'message_changed'
       return if msg.message.text is msg.previous_message.text # return if text not changed
-
-      message_channel = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.channel).name
 
       # changed message
       message = removeFormattingLabel msg.message.text
@@ -364,18 +335,19 @@ module.exports = (robot) ->
             removeReaction(reaction, msg.channel, msg.previous_message.ts)
             removeReaction(reaction_jiamari, msg.channel, msg.previous_message.ts)
             removeReaction(reaction_jitarazu, msg.channel, msg.previous_message.ts)
+
+            # decrement ikku count
+            decrementIkkuPerUser(msg.message.user)
         else
           # ikku
-          jiamari = result[0]
-          jitarazu = result[1]
-
           channelId = msg.channel
           messageTs = msg.previous_message.ts
           message = message
-          channelName = message_channel
+          channelName = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.channel).name
           userName = robot.adapter.client.rtm.dataStore.users[msg.message.user].name
           userId = msg.message.user
-
+          jiamari = result[0]
+          jitarazu = result[1]
           reactionAndCopyIkku(channelId, messageTs, message, channelName, userName, userId, jiamari, jitarazu)
 
     # delete messages
@@ -390,3 +362,4 @@ module.exports = (robot) ->
           tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
             robot.logger.error err if err
             robot.logger.debug "delete redis hash #{reply}"
+          decrementIkkuPerUser(msg.message.user)
