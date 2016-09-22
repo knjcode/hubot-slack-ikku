@@ -330,13 +330,12 @@ module.exports = (robot) ->
   robot.adapter.client.rtm.on 'raw_message', (msg) ->
     msg = JSON.parse(msg)
 
-    # bot_message
-    if msg.type is 'message' and msg.subtype is 'bot_message'
-      return # ignore bot message
+    return if msg.type is 'message' and msg.subtype is 'bot_message' # ignore bot message
 
     # change messages
     if msg.type is 'message' and msg.subtype is 'message_changed'
       return if msg.message.text is msg.previous_message.text # return if text not changed
+
       message_channel = robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(msg.channel).name
 
       # changed message
@@ -351,25 +350,20 @@ module.exports = (robot) ->
         if  result is false
           # not ikku
           tsRedisClient.hget "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
-            if err
-              robot.logger.error err
-            else
-              # delete copied ikku
-              robot.adapter.client.web.chat.delete reply, targetChannelId, (err, res) ->
-                if err
-                  robot.logger.error err
-                else
-                  robot.logger.debug "delete ikku #{JSON.stringify res}"
-                  tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
-                    if err
-                      robot.logger.error err
-                    else
-                      robot.logger.debug "delete redis hash #{reply}"
+            robot.logger.error err if err
 
-              # remove reactions from original message
-              removeReaction(reaction, msg.channel, msg.previous_message.ts)
-              removeReaction(reaction_jiamari, msg.channel, msg.previous_message.ts)
-              removeReaction(reaction_jitarazu, msg.channel, msg.previous_message.ts)
+            # delete copied ikku
+            robot.adapter.client.web.chat.delete reply, targetChannelId, (err, res) ->
+              robot.logger.error err if err
+              robot.logger.debug "delete ikku #{JSON.stringify res}"
+              tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
+                robot.logger.error err if err
+                robot.logger.debug "delete redis hash #{reply}"
+
+            # remove reactions from original message
+            removeReaction(reaction, msg.channel, msg.previous_message.ts)
+            removeReaction(reaction_jiamari, msg.channel, msg.previous_message.ts)
+            removeReaction(reaction_jitarazu, msg.channel, msg.previous_message.ts)
         else
           # ikku
           jiamari = result[0]
@@ -388,17 +382,11 @@ module.exports = (robot) ->
     if msg.type is 'message' and msg.subtype is 'message_deleted'
       return if msg.channel is targetChannelId # return if ikku_channel messages deleted
       tsRedisClient.hget "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
-        if err
-          robot.logger.error err
-        else
-          # delete copied ikku
-          robot.adapter.client.web.chat.delete reply, targetChannelId, (err, res) ->
-            if err
-              robot.logger.error err
-            else
-              robot.logger.debug "delete ikku #{JSON.stringify res}"
-              tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
-                if err
-                  robot.logger.error err
-                else
-                  robot.logger.debug "delete redis hash #{reply}"
+        robot.logger.error err if err
+        # delete copied ikku
+        robot.adapter.client.web.chat.delete reply, targetChannelId, (err, res) ->
+          robot.logger.error err if err
+          robot.logger.debug "delete ikku #{JSON.stringify res}"
+          tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
+            robot.logger.error err if err
+            robot.logger.debug "delete redis hash #{reply}"
