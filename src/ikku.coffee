@@ -57,12 +57,12 @@ module.exports = (robot) ->
 
       `outer://`
       for token in tokens
-        continue if token.pos is '記号'
-        for item in ['、', '!', '?']
-          if token.surface_form is item
-            if regions[regions.length - 1] isnt 0
-              regions.push 0
-            `continue outer`
+        if token.pos is '記号'
+          for item in ['、', '!', '?']
+            if token.surface_form is item
+              if regions.length < targetRegions.length and regions[regions.length - 1] >= targetRegions[regions.length - 1]
+                regions.push 0
+              `continue outer`
 
         pronunciation = token.pronunciation or token.surface_form
         return unless pronunciation.match /^[ぁ-ゔァ-ヺー…]+$/
