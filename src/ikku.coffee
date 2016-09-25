@@ -52,6 +52,7 @@ tsRedisUrl = process.env.HUBOT_SLACK_IKKU_MSG_REDIS ? 'redis://localhost:6379'
 ranking_channel = process.env.HUBOT_SLACK_IKKU_RANKING_CHANNEL ? "ikku"
 ranking_enabled = process.env.HUBOT_SLACK_IKKU_RANKING_ENABLED
 top_n = process.env.HUBOT_SLACK_IKKU_RANKING_TOP_N ? 5
+link_names = process.env.SLACK_LINK_NAMES ? 0
 
 info = url.parse tsRedisUrl, true
 tsRedisClient = if info.auth then tsRedis.createClient(info.port, info.hostname, {no_ready_check: true}) else tsRedis.createClient(info.port, info.hostname)
@@ -118,6 +119,7 @@ module.exports = (robot) ->
       .then (ranking_text) ->
         if ranking_text.length > 0
           icon_url = robot.adapter.client.rtm.dataStore.users[robot.adapter.self.id].profile.image_48
+
           postMessage(robot, ranking_channel, ranking_text, robot.name, icon_url)
           .then (res) ->
             robot.logger.info "post ranking: #{JSON.stringify res}"
@@ -179,7 +181,7 @@ module.exports = (robot) ->
 
     return [jiamari, jitarazu]
 
-  postMessage = (robot, channel_name, unformatted_text, user_name, link_names, icon_url) -> new Promise (resolve) ->
+  postMessage = (robot, channel_name, unformatted_text, user_name, icon_url) -> new Promise (resolve) ->
     robot.adapter.client.web.chat.postMessage channel_name, unformatted_text,
       username: user_name
       link_names: link_names
@@ -219,8 +221,7 @@ module.exports = (robot) ->
     return if channelName is ikku_channel # ignore messages to ikku channel
     return if channelId[0] is 'G' # ignore private channels
 
-    link_names = process.env.SLACK_LINK_NAMES ? 0
-    postMessage(robot, ikku_channel, unformatted_text, userName, link_names, icon_url)
+    postMessage(robot, ikku_channel, unformatted_text, userName, icon_url)
     .then (res) ->
       # save relation of original message ts and copied messages ts
       tsRedisClient.hsetnx "#{prefix}:#{channelId}", messageTs, res.ts
