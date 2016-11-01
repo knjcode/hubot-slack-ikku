@@ -141,7 +141,7 @@ module.exports = (robot) ->
     robot.http(mecabUrl)
       .header("Content-type", "application/json")
       .post(json) (err, res, body) ->
-        robot.logger.err err if err
+        robot.logger.error err if err
         resolve JSON.parse(body)
 
   detectIkku = (tokens) ->
@@ -338,7 +338,7 @@ module.exports = (robot) ->
             removeReaction(reaction_jitarazu, msg.channel, msg.previous_message.ts)
 
             # decrement ikku count
-            decrementIkkuPerUser(msg.message.user)
+            # decrementIkkuPerUser(msg.message.user)
         else
           # ikku
           channelId = msg.channel
@@ -363,4 +363,4 @@ module.exports = (robot) ->
           tsRedisClient.hdel "#{prefix}:#{msg.channel}", msg.previous_message.ts, (err, reply) ->
             robot.logger.error err if err
             robot.logger.debug "delete redis hash #{reply}"
-          decrementIkkuPerUser(msg.message.user)
+            # decrementIkkuPerUser(msg.message.user)
